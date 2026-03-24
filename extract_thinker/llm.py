@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import List, Dict, Any, Optional
 import instructor
 import litellm
@@ -46,6 +47,7 @@ class LLM:
     MAX_THINKING_BUDGET = 64000  # Maximum thinking budget
     MIN_THINKING_BUDGET = 1200  # Minimum thinking budget
     DEFAULT_OUTPUT_TOKENS = 32000
+    FORGE_DEFAULT_API_BASE = "https://api.forge.tensorblock.co/v1"
 
     # A single default completion-token limit that is accepted by the vast
     # majority of models.  If a model supports more (or you need fewer), pass
@@ -237,6 +239,7 @@ class LLM:
 
     def _request_with_router(self, messages: List[Dict[str, str]], response_model: Optional[str]) -> Any:
         """Handle request using router with or without thinking parameter"""
+        model, provider_params = self._resolve_provider_params()
         max_tokens = self._get_model_max_tokens()
         if self.token_limit is not None:
             max_tokens = min(self.token_limit, max_tokens)
@@ -244,15 +247,16 @@ class LLM:
             max_tokens = min(self.thinking_token_limit, max_tokens) if self.thinking_token_limit else max_tokens
         
         params = {
-            "model": self.model,
+            "model": model,
             "messages": messages,
             "response_model": response_model,
             "temperature": self.temperature,
             "timeout": self.TIMEOUT,
             "max_completion_tokens": max_tokens,
         }
+        params.update(provider_params)
         if self.is_thinking:
-            if litellm.supports_reasoning(self.model):
+            if litellm.supports_reasoning(model):
                 # Add thinking parameter for supported models
                 thinking_param = {
                     "type": "enabled",
@@ -260,12 +264,13 @@ class LLM:
                 }
                 params["thinking"] = thinking_param
             else:
-                print(f"Warning: Model {self.model} doesn't support thinking parameter, proceeding without it.")
+                print(f"Warning: Model {model} doesn't support thinking parameter, proceeding without it.")
 
         return self.router.completion(**params)
             
     def _request_direct(self, messages: List[Dict[str, str]], response_model: Optional[str]) -> Any:
         """Handle direct request with or without thinking parameter"""
+        model, provider_params = self._resolve_provider_params()
         max_tokens = self._get_model_max_tokens()
         if self.token_limit is not None:
             max_tokens = min(self.token_limit, max_tokens)
@@ -273,7 +278,7 @@ class LLM:
             max_tokens = min(self.thinking_token_limit, max_tokens) if self.thinking_token_limit else max_tokens
 
         base_params = {
-            "model": self.model,
+            "model": model,
             "messages": messages,
             "temperature": self.temperature,
             "response_model": response_model,
@@ -281,9 +286,10 @@ class LLM:
             "max_completion_tokens": max_tokens,
             "timeout": self.TIMEOUT,
         }
+        base_params.update(provider_params)
         
         if self.is_thinking:
-            if litellm.supports_reasoning(self.model):
+            if litellm.supports_reasoning(model):
                 # Try with thinking parameter
                 thinking_param = {
                     "type": "enabled",
@@ -291,7 +297,7 @@ class LLM:
                 }
                 base_params["thinking"] = thinking_param
             else:
-                print(f"Warning: Model {self.model} doesn't support thinking parameter, proceeding without it.")
+                print(f"Warning: Model {model} doesn't support thinking parameter, proceeding without it.")
         
         return self.client.chat.completions.create(**base_params)
 
@@ -311,6 +317,7 @@ class LLM:
             except Exception as e:
                 raise ValueError(f"Failed to extract from source: {str(e)}")
 
+        model, provider_params = self._resolve_provider_params()
         max_tokens = self._get_model_max_tokens()
         if self.token_limit is not None:
             max_tokens = min(self.token_limit, max_tokens)
@@ -318,13 +325,14 @@ class LLM:
             max_tokens = min(self.thinking_token_limit, max_tokens) if self.thinking_token_limit else max_tokens
 
         params = {
-            "model": self.model,
+            "model": model,
             "messages": messages,
             "max_completion_tokens": max_tokens,
         }
+        params.update(provider_params)
 
         if self.is_thinking:
-            if litellm.supports_reasoning(self.model):
+            if litellm.supports_reasoning(model):
                 # Add thinking parameter for supported models
                 thinking_param = {
                     "type": "enabled",
@@ -332,7 +340,7 @@ class LLM:
                 }
                 params["thinking"] = thinking_param
             else:
-                print(f"Warning: Model {self.model} doesn't support thinking parameter, proceeding without it.")
+                print(f"Warning: Model {model} doesn't support thinking parameter, proceeding without it.")
         
         if self.router:
             raw_response = self.router.completion(**params)
@@ -354,3 +362,19 @@ class LLM:
         """
 
         return self.DEFAULT_MAX_COMPLETION_TOKENS
+
+    def _resolve_provider_params(self) -> tuple[str, Dict[str, str]]:
+        """Resolve provider-specific model transformations and request params."""
+        if not self.model.lower().startswith("forge/"):
+            return self.model, {}
+
+        forge_model = self.model.split("/", 1)[1]
+        if "/" not in forge_model:
+            raise ValueError("Forge model must use format 'forge/Provider/model-name'.")
+
+        forge_api_key = os.getenv("FORGE_API_KEY")
+        if not forge_api_key:
+            raise ValueError("FORGE_API_KEY is required when using a Forge model.")
+
+        forge_api_base = os.getenv("FORGE_API_BASE") or self.FORGE_DEFAULT_API_BASE
+        return forge_model, {"api_base": forge_api_base, "api_key": forge_api_key}

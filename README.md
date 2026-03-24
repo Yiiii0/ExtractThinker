@@ -271,7 +271,16 @@ ExtractThinker supports integration with multiple LLM providers:
 - **Anthropic**: Integrate with Claude models.
 - **Cohere**: Utilize Cohere's language models.
 - **Azure OpenAI**: Connect with Azure's OpenAI services.
+- **Forge**: Route `Provider/model-name` models through Forge (`forge/OpenAI/gpt-4o-mini`).
 - **Local Models**: Ollama compatible models.
+
+Forge usage:
+
+```python
+os.environ["FORGE_API_KEY"] = "your-api-key"
+os.environ["FORGE_API_BASE"] = "https://api.forge.tensorblock.co/v1"  # optional
+extractor.load_llm("forge/OpenAI/gpt-4o-mini")
+```
 
 ## ⚙️ How It Works
 
