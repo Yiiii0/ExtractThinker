@@ -1,4 +1,5 @@
 import asyncio
+from importlib.util import find_spec
 import os
 from typing import List, Dict, Any, Optional
 import instructor
@@ -100,9 +101,7 @@ class LLM:
     @staticmethod
     def _check_pydantic_ai():
         """Check if pydantic-ai is installed."""
-        try:
-            import pydantic_ai
-        except ImportError:
+        if find_spec("pydantic_ai") is None:
             raise ImportError(
                 "Could not import pydantic-ai package. "
                 "Please install it with `pip install pydantic-ai`."
@@ -114,11 +113,11 @@ class LLM:
         try:
             import pydantic_ai
             return pydantic_ai
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "Could not import pydantic-ai package. "
                 "Please install it with `pip install pydantic-ai`."
-            )
+            ) from e
 
     def load_router(self, router: Router) -> None:
         """Load a LiteLLM router for model fallbacks."""
@@ -200,7 +199,7 @@ class LLM:
                 )
                 return result.data
             except Exception as e:
-                raise ValueError(f"Failed to extract from source: {str(e)}")
+                raise ValueError(f"Failed to extract from source: {str(e)}") from e
 
         # Uncomment the following lines if you need to calculate max_tokens
         # contents = map(lambda message: message['content'], messages)
@@ -315,7 +314,7 @@ class LLM:
                 )
                 return result.data
             except Exception as e:
-                raise ValueError(f"Failed to extract from source: {str(e)}")
+                raise ValueError(f"Failed to extract from source: {str(e)}") from e
 
         model, provider_params = self._resolve_provider_params()
         max_tokens = self._get_model_max_tokens()
